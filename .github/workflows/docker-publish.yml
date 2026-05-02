@@ -1,0 +1,55 @@
+name: Build & Publish Docker Image
+
+on:
+  # Rebuild when upstream syncs or on manual trigger
+  push:
+    branches: [main]
+  workflow_dispatch:
+  # Periodically check for upstream changes
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 06:00 UTC
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Sync with upstream
+        run: |
+          git remote add upstream https://github.com/plastic-labs/honcho.git || true
+          git fetch upstream main
+          git merge upstream/main --no-edit || true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
